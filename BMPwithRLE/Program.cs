@@ -5,11 +5,77 @@ using System.Text;
 using System.IO;
 using System.Collections;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace RLEplusBWT
 {
     class  MergeSortGeneric
     {
+        public static void Sort<T>(IList<T> data, int left, int right) where T : IComparable
+        {
+            int len = right - left;
+            // сортировка слиянием начиная с arr[left] и ДО arr[right] 
+            if (len > 1)
+            {
+                // long чтобы избежать переполнения к примеру для случая когда int.MAX и int.MAX - 1;
+                var mid = (int)((long)right + left) / 2;
+
+                // Разделяй и властвуй
+                if (len >= 1024)
+                {
+                    var t1 = Task.Run(() => Sort(data, left, mid));
+                    var t2 = Task.Run(() => Sort(data, mid, right));
+                    Task.WaitAll(t1, t2);
+                }
+                else
+                {
+                    Sort(data, left, mid);
+                    Sort(data, mid, right);
+                }
+
+                // Слияние отсортированных подмассивов [left, mid) [mid, right)
+                Merge(data, left, mid, right);
+            }
+        }
+        private static void Merge<T>(IList<T> data, int left, int middle, int right) where T : IComparable
+        {
+            // Инициализация временных массиовов
+            var L = new T[middle - left];
+            var R = new T[right - middle];
+
+            for (int i = 0; i < L.Length; i++)
+                L[i] = data[left + i];
+            for (int i = 0; i < R.Length; i++)
+                R[i] = data[middle + i];
+
+            // Слияние отсортированных массивов и запись в исходный
+            int iLeft = 0;
+            int iRight = 0;
+            int j = left;
+
+            while (iLeft < L.Length && iRight < R.Length)
+            {
+                if (L[iLeft].CompareTo(R[iRight]) <= 0)
+                {
+                    data[j++] = L[iLeft++];
+                }
+                else 
+                {
+                    data[j++] = R[iRight++];
+                }
+            }
+
+            while (iLeft < L.Length)
+            {
+                data[j++] = L[iLeft++];
+            }
+
+            while (iRight < R.Length)
+            {
+                data[j++] = R[iRight++];
+            }
+        }
+
         public static void Sort<T> (IList<T> data, IComparer<T> comparer, int left, int right) 
         {
             int len = right - left;
@@ -20,7 +86,7 @@ namespace RLEplusBWT
                 var mid = (int)((long)right + left) / 2;
 
                 // Разделяй и властвуй
-                if (len >= 2048)
+                if (len >= 1024)
                 {
                     var t1 = Task.Run(() => Sort(data, comparer, left, mid));
                     var t2 = Task.Run(() => Sort(data, comparer, mid, right));
@@ -335,7 +401,7 @@ namespace RLEplusBWT
     // Кодирование BWT и настройки
     class BWT
     {
-        const ushort BLOCK_SIZE = 512;
+        const ushort BLOCK_SIZE = 1024;
         const int OFFSET_SIZE = sizeof(ushort);
 
       // обратная трансформация BWT, рзбивается на блоки
@@ -439,8 +505,8 @@ namespace RLEplusBWT
 
             var offsetArrays = new List<OffsetArray>();
             for (int i = 0; i < input.Length; i++) offsetArrays.Add(new OffsetArray(input, i));
-
-            offsetArrays.Sort();
+            
+            MergeSortGeneric.Sort(offsetArrays, new OffsetArrayComparer(), 0, offsetArrays.Count);
 
             ushort originalPosition = 0;
             for (ushort i = 0; i < offsetArrays.Count; i++)
@@ -537,6 +603,8 @@ namespace RLEplusBWT
         {
             Console.OutputEncoding = Encoding.UTF8;                       
             var BMP = new FileWorker();
+            var sv = new Stopwatch();
+            sv.Start();
 
             BMP.FileEncoder(@"Pics\CHB.bmp", useFlexSpecial: true);
             BMP.FileDecoder(@"Pics\CHB.bmp.rle");
@@ -549,16 +617,19 @@ namespace RLEplusBWT
 
             BMP.FileEncoder(@"Pics\CV2.bmp", useFlexSpecial: true);
             BMP.FileDecoder(@"Pics\CV2.bmp.rle");
-
+        
             BMP.FileEncoder(@"Pics\Real.bmp", useFlexSpecial: true);
             BMP.FileDecoder(@"Pics\Real.bmp.rle");
 
+            
             BMP.FileEncoder(@"Pics\Real2.bmp", useFlexSpecial: true);
             BMP.FileDecoder(@"Pics\Real2.bmp.rle");
-
+        
             BMP.FileEncoder(@"Pics\RealCB.bmp", useFlexSpecial: true);
             BMP.FileDecoder(@"Pics\RealCB.bmp.rle");
-
+            
+            sv.Stop();
+            Console.WriteLine(sv.ElapsedMilliseconds);
 
             Console.ReadKey();
         }
